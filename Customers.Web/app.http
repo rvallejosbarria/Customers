@@ -25,7 +25,7 @@ Accept: application/json
 Content-Type: application/json
 
 {
-  "companyName": "Updated customer"
+  "companyName": ""
 }
 
 ###

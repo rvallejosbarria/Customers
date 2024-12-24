@@ -24,7 +24,7 @@ app.MapGet("/customers", async (CustomerData data) =>
 
 app.MapGet("/customers/{id:guid}", async (Guid id, CustomerData data) =>
         await data.GetByIdAsync(id) is Customer customer
-            ? Results.Ok(customer)
+            ? TypedResults.Ok(customer)
             : Results.NotFound()
     )
     .WithName("GetCustomerById")
@@ -36,6 +36,8 @@ app.MapPost("/customers", async (Customer customer, CustomerData data) =>
         await data.AddAsync(newCustomer);
         return Results.Created($"/customers/{newCustomer.Id}", newCustomer);
     })
+    // .AddEndpointFilter(ValidationHelpers.ValidateAddCustomer)
+    .AddEndpointFilter<ValidateCustomer>()
     .WithName("AddCustomer")
     .WithOpenApi();
 
@@ -55,6 +57,8 @@ app.MapPut("/customers/{id:guid}", async (Guid id, Customer customer, CustomerDa
         await data.UpdateAsync(updatedCustomer);
         return Results.Ok(updatedCustomer);
     })
+    // .AddEndpointFilter(ValidationHelpers.ValidateAddCustomer)
+    .AddEndpointFilter<ValidateCustomer>()
     .WithName("UpdateCustomer")
     .WithOpenApi();
 
@@ -127,7 +131,7 @@ public class CustomerData
 
         return Task.CompletedTask;
     }
-    
+
     public Task DeleteAsync(Guid id)
     {
         if (_customers.Any(c => c.Id == id))
@@ -137,5 +141,52 @@ public class CustomerData
         }
 
         return Task.CompletedTask;
+    }
+}
+
+public class ValidationHelpers
+{
+    internal static async ValueTask<object?> ValidateAddCustomer(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var customer = context.GetArgument<Customer>(0);
+        if (customer is not null && string.IsNullOrEmpty(customer.CompanyName))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>()
+            {
+                { "CompanyName", new[] { "Please enter a valid company name" } }
+            });
+        }
+        return await next(context);
+    }
+    
+    internal static async ValueTask<object?> ValidateUpdateCustomer(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var customer = context.GetArgument<Customer>(1);
+        if (customer is not null && string.IsNullOrEmpty(customer.CompanyName))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>()
+            {
+                { "CompanyName", new[] { "Please enter a valid company name" } }
+            });
+        }
+        return await next(context);
+    }
+}
+
+public class ValidateCustomer : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var customer = context.Arguments.FirstOrDefault(a => a is Customer) as Customer;
+        
+        if (customer is not null && string.IsNullOrEmpty(customer.CompanyName))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>()
+            {
+                { "CompanyName", new[] { "Please enter a valid company name" } }
+            });
+        }
+        
+        return await next(context);
     }
 }
