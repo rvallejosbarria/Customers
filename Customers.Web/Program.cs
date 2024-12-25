@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using Microsoft.AspNetCore.Mvc;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
@@ -41,9 +44,9 @@ app.MapPost("/customers", async (Customer customer, CustomerData data) =>
     .WithName("AddCustomer")
     .WithOpenApi();
 
-app.MapPut("/customers/{id:guid}", async (Guid id, Customer customer, CustomerData data) =>
+app.MapPut("/customers/{id:guid}", async ([AsParameters] PutRequest request) =>
     {
-        var existingCustomer = await data.GetByIdAsync(id);
+        var existingCustomer = await request.Data.GetByIdAsync(request.Id);
         if (existingCustomer is null)
         {
             return Results.NotFound();
@@ -51,14 +54,15 @@ app.MapPut("/customers/{id:guid}", async (Guid id, Customer customer, CustomerDa
 
         var updatedCustomer = existingCustomer with
         {
-            CompanyName = customer.CompanyName,
-            Projects = customer.Projects ?? new List<Project>()
+            CompanyName = request.Customer.CompanyName,
+            Projects = request.Customer.Projects ?? new List<Project>()
         };
-        await data.UpdateAsync(updatedCustomer);
+        await request.Data.UpdateAsync(updatedCustomer);
         return Results.Ok(updatedCustomer);
     })
     // .AddEndpointFilter(ValidationHelpers.ValidateAddCustomer)
-    .AddEndpointFilter<ValidateCustomer>()
+    // .AddEndpointFilter<ValidateCustomer>()
+    .WithParameterValidation()
     .WithName("UpdateCustomer")
     .WithOpenApi();
 
@@ -77,9 +81,16 @@ app.MapDelete("/customers/{id:guid}", async (Guid id, CustomerData data) =>
 
 app.Run();
 
-public record Customer(Guid Id, string CompanyName, List<Project> Projects);
+public record Customer(Guid Id, [MinLength(10)] string CompanyName, List<Project> Projects);
 
 public record Project(Guid Id, string ProjectName, Guid CustomerId);
+
+public readonly record struct PutRequest
+{
+    [FromRoute(Name = "id")] [Required] public Guid Id { get; init; }
+    [Required] public Customer Customer { get; init; }
+    public CustomerData Data { get; init; }
+}
 
 public class CustomerData
 {
@@ -146,7 +157,8 @@ public class CustomerData
 
 public class ValidationHelpers
 {
-    internal static async ValueTask<object?> ValidateAddCustomer(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    internal static async ValueTask<object?> ValidateAddCustomer(EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
     {
         var customer = context.GetArgument<Customer>(0);
         if (customer is not null && string.IsNullOrEmpty(customer.CompanyName))
@@ -156,10 +168,12 @@ public class ValidationHelpers
                 { "CompanyName", new[] { "Please enter a valid company name" } }
             });
         }
+
         return await next(context);
     }
-    
-    internal static async ValueTask<object?> ValidateUpdateCustomer(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+
+    internal static async ValueTask<object?> ValidateUpdateCustomer(EndpointFilterInvocationContext context,
+        EndpointFilterDelegate next)
     {
         var customer = context.GetArgument<Customer>(1);
         if (customer is not null && string.IsNullOrEmpty(customer.CompanyName))
@@ -169,6 +183,7 @@ public class ValidationHelpers
                 { "CompanyName", new[] { "Please enter a valid company name" } }
             });
         }
+
         return await next(context);
     }
 }
@@ -178,7 +193,7 @@ public class ValidateCustomer : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
         var customer = context.Arguments.FirstOrDefault(a => a is Customer) as Customer;
-        
+
         if (customer is not null && string.IsNullOrEmpty(customer.CompanyName))
         {
             return Results.ValidationProblem(new Dictionary<string, string[]>()
@@ -186,7 +201,7 @@ public class ValidateCustomer : IEndpointFilter
                 { "CompanyName", new[] { "Please enter a valid company name" } }
             });
         }
-        
+
         return await next(context);
     }
 }
